@@ -12,6 +12,8 @@ public class KwpSdk {
     static String TAG = "KWPSDK";
     ReaderComm mReaderComm;
     Thread serialThread;
+
+
     DaouReaderPacket mDaouRdrPkt = null;
     public static int ThProcStep = 0;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
