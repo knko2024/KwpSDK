@@ -91,7 +91,28 @@ public class KwpSdk {
             dispatchResult("ERROR:READER_INIT_FAILED");
             return;
         }
-        mReaderComm.RdrIniPacket(mReaderComm.RID_K100_INP_CARD, "1004");
+        mReaderComm.RdrIniPacket(mReaderComm.RID_K100_INP_CARD, "99999900", "1004", "0");
+
+        mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
+        ThProcStep = ThTranstionRunPayment;
+        runSingleTransaction(ThProcStep);
+    }
+
+
+
+    public void reqK980(Context context ) {
+        if (cardInputUiHandler != null) {
+            cardInputUiHandler.onShowCardInput(context);
+        }
+        prepareReader(context);
+        if (!initCardReader()) {
+            if (cardInputUiHandler != null) {
+                cardInputUiHandler.onHideCardInput();
+            }
+            dispatchResult("ERROR:READER_INIT_FAILED");
+            return;
+        }
+        mReaderComm.RdrIniPacket(mReaderComm.RID_K980_CAN_TRN, "99999988");
         mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
         ThProcStep = ThTranstionRunPayment;
         runSingleTransaction(ThProcStep);

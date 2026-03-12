@@ -557,8 +557,6 @@ public class ReaderComm {
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_ETX);
                 break;
-
-
         }
 
         finalData = new byte[pos + 4];
@@ -895,7 +893,7 @@ public class ReaderComm {
                 break;
 
             case RID_K980_CAN_TRN:
-                Log.d(TAG, "RID_K980_DOW_SKEY:" + var);
+                Log.d(TAG, "RID_K980_CAN_TRN:" + var);
                 mDaouRdrPkt.setTrmlid(var);
                 break;
         }
