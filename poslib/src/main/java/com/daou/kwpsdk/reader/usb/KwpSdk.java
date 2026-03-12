@@ -7,6 +7,7 @@ import android.util.Log;
 import android.os.Handler;
 import com.daou.kwpsdk.common.util.ReaderLogUtil;
 import com.ftdi.j2xx.D2xxManager;
+
 public class KwpSdk {
     static String TAG = "KWPSDK";
     ReaderComm mReaderComm;
@@ -65,9 +66,7 @@ public class KwpSdk {
         ThreadTransactionProc(mContext, ThProcStep);
     }
 
-
-    // Pure connectivity check only.
-    public Boolean isUsbConnected(Context context) {
+     public Boolean isUsbConnected(Context context) {
         try {
             D2xxManager d2xxManager = D2xxManager.getInstance(context);
             int deviceCount = d2xxManager.createDeviceInfoList(context);
@@ -78,8 +77,7 @@ public class KwpSdk {
         }
     }
 
-    // One-shot K900 request: receives K910 via callback.
-    public void reqK100(Context context ) {
+     public void reqK100(Context context ) {
         if (cardInputUiHandler != null) {
             cardInputUiHandler.onShowCardInput(context);
         }

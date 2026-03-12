@@ -34,6 +34,9 @@ android {
 }
 
 dependencies {
+    // Flutter 의존성 추가
+    compileOnly("io.flutter:flutter_embedding_release:1.0.0-0fddccd3109d1fd3f6022cd1a741b3531047f1e6")
+
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(files("libs/d2xx.jar"))
