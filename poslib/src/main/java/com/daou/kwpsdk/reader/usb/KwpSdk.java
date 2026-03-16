@@ -1,217 +1,197 @@
 package com.daou.kwpsdk.reader.usb;
-import static com.daou.kwpsdk.reader.usb.CardReaderConstants.ThReaderIntergrity;
-import static com.daou.kwpsdk.reader.usb.CardReaderConstants.ThTranstionRunPayment;
+
 import android.content.Context;
+import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.os.Handler;
-import com.daou.kwpsdk.common.util.ReaderLogUtil;
+
 import com.ftdi.j2xx.D2xxManager;
 
 public class KwpSdk {
     static String TAG = "KWPSDK";
-    ReaderComm mReaderComm;
-    Thread serialThread;
 
-
-    DaouReaderPacket mDaouRdrPkt = null;
-    public static int ThProcStep = 0;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    // Flutter/Host callback
+    private final TransportController transportController = new TransportController(
+        new TransportController.TransportEventListener() {
+            @Override
+            public void onResult(String result) {
+                dispatchResult(result);
+            }
+
+            @Override
+            public void onCardInputVisibilityChanged(boolean visible, Context context) {
+                dispatchCardInputVisibility(visible, context);
+            }
+        }
+    );
+
+    private volatile boolean cardInputUiVisible = false;
     private ResultCallback resultCallback;
+    private CardInputUiHandler cardInputUiHandler;
+
     public interface ResultCallback {
         void onResult(String result);
     }
-    public void setResultCallback(ResultCallback callback) {
-        this.resultCallback = callback;
-    }
 
-    /** 카드 입력 요청 시 UI(팝업) 표시/숨김을 앱에 위임하는 핸들러. */
-    private CardInputUiHandler cardInputUiHandler;
     public interface CardInputUiHandler {
         void onShowCardInput(Context context);
         void onHideCardInput();
     }
+
+    /**
+     * Register a callback that receives reader results.
+     *
+     * @param callback callback invoked with the reader result string
+     * @return none
+     */
+    public void setResultCallback(ResultCallback callback) {
+        this.resultCallback = callback;
+    }
+
+    /**
+     * Register a handler that shows or hides the card input UI.
+     *
+     * @param handler UI handler for card input state
+     * @return none
+     */
     public void setCardInputUiHandler(CardInputUiHandler handler) {
         this.cardInputUiHandler = handler;
     }
-    public boolean initCardReader() {
-        Log.d("KiwoomOrder", "[USB 리더기 초기설정]");
-        if (mReaderComm == null) {
-            Log.e(TAG, "mReaderComm is not initialized");
-            return false;
-        }
-        boolean ret = mReaderComm.ReaderOpen();
-        if (!ret) {
-            Log.d("KiwoomOrder", "[리더기 오픈 실패]");
-            return false;
-        } else {
-            Log.d("KiwoomOrder", "[리더기 오픈 완료]");
-        }
-        return true;
-    }
-    public void k100(Context mContext, final String trmlid, final String Amount, final String InputType) {
-        ReaderLogUtil.d(TAG, "#######################################################################");
-        ReaderLogUtil.d(TAG, "                      카드 입력 요청  K100/K180                          ");
-        ReaderLogUtil.d(TAG, "#######################################################################");
-        ReaderLogUtil.d(TAG, "trmlid:" + trmlid);
-        ReaderLogUtil.d(TAG, "Amount:" + Amount);
-        ReaderLogUtil.d(TAG, "InputType:" + InputType);
-        prepareReader(mContext);
-        if (!initCardReader()) {
-            dispatchResult("ERROR:READER_INIT_FAILED");
-            return;
-        }
-        mReaderComm.RdrIniPacket(mReaderComm.RID_K100_INP_CARD, trmlid);
-        mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
-        ThProcStep = ThTranstionRunPayment;
-        ThreadTransactionProc(mContext, ThProcStep);
-    }
 
-     public Boolean isUsbConnected(Context context) {
+    /**
+     * Check whether a USB card reader is currently connected.
+     *
+     * @param context Android context used to access the FTDI driver
+     * @return true when at least one USB reader is connected
+     */
+    public Boolean isUsbConnected(Context context) {
         try {
-            D2xxManager d2xxManager = D2xxManager.getInstance(context);
-            int deviceCount = d2xxManager.createDeviceInfoList(context);
+            Context appContext = toApplicationContext(context);
+            if (appContext == null) {
+                return false;
+            }
+            D2xxManager d2xxManager = D2xxManager.getInstance(appContext);
+            int deviceCount = d2xxManager.createDeviceInfoList(appContext);
             return deviceCount > 0;
         } catch (D2xxManager.D2xxException e) {
-            Log.e(TAG, "USB 연결 확인 실패: " + e.getMessage());
+            Log.e(TAG, "USB connection check failed: " + e.getMessage());
             return false;
         }
     }
 
-     public void reqK100(Context context ) {
-        if (cardInputUiHandler != null) {
-            cardInputUiHandler.onShowCardInput(context);
-        }
-        prepareReader(context);
-        if (!initCardReader()) {
-            if (cardInputUiHandler != null) {
-                cardInputUiHandler.onHideCardInput();
-            }
-            dispatchResult("ERROR:READER_INIT_FAILED");
-            return;
-        }
-        mReaderComm.RdrIniPacket(mReaderComm.RID_K100_INP_CARD, "99999900", "1004", "0");
-
-        mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
-        ThProcStep = ThTranstionRunPayment;
-        runSingleTransaction(ThProcStep);
+    /**
+     * Request a K100 card input transaction.
+     *
+     * @param context Android context for the transport worker
+     * @return none
+     */
+    public void reqK100(Context context) {
+        transportController.enqueueK100(toApplicationContext(context));
     }
 
-
-
-    public void reqK980(Context context ) {
-        if (cardInputUiHandler != null) {
-            cardInputUiHandler.onShowCardInput(context);
-        }
-        prepareReader(context);
-        if (!initCardReader()) {
-            if (cardInputUiHandler != null) {
-                cardInputUiHandler.onHideCardInput();
-            }
-            dispatchResult("ERROR:READER_INIT_FAILED");
-            return;
-        }
-        mReaderComm.RdrIniPacket(mReaderComm.RID_K980_CAN_TRN, "99999988");
-        mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
-        ThProcStep = ThTranstionRunPayment;
-        runSingleTransaction(ThProcStep);
+    /**
+     * Request a K800 security certification transaction.
+     *
+     * @param context Android context for the transport worker
+     * @param trmlid terminal identifier used by the reader protocol
+     * @return none
+     */
+    public void reqK800(Context context, String trmlid) {
+        transportController.enqueueK800(toApplicationContext(context), trmlid);
     }
 
-    public void setChkConnectUsb(Context context) {
-        prepareReader(context);
-        if (!initCardReader()) {
-            return;
-        }
-        mReaderComm.RdrIniPacket(mReaderComm.RID_K900_FRM_STATUS, "99999987");
-        mDaouRdrPkt.tInputType[0] = ReaderComm.CARD_INPUT_TYPE_NOMAL;
-        ThProcStep = ThReaderIntergrity;
-        startTransactionLoop(ThReaderIntergrity);
+    /**
+     * Request a K980 cancel transaction.
+     *
+     * @param context Android context for the transport worker
+     * @return none
+     */
+    public void reqK980(Context context) {
+        transportController.enqueueK980(toApplicationContext(context));
     }
 
+    /**
+     * Report whether a transaction is currently active.
+     *
+     * @return true when a reader transaction is in progress
+     */
+    public boolean isTransactionActive() {
+        return transportController.isTransactionActive();
+    }
 
-    public void ThreadTransactionProc(Context context, int ThProcStep) {
-        startTransactionLoop(ThProcStep);
+    /**
+     * Shut down the worker thread and close the reader.
+     *
+     * @return none
+     */
+    public void shutdown() {
+        transportController.shutdown();
     }
-    public void stopTransactionLoop() {
-        if (serialThread != null && serialThread.isAlive()) {
-            serialThread.interrupt();
-            try {
-                serialThread.join(1000); // 스레드 종료 대기
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                Log.e(TAG, "스레드 종료 대기 중 인터럽트 발생");
-            }
-            serialThread = null;
-        }
-    }
-    private void prepareReader(Context context) {
-        stopTransactionLoop();
-        mReaderComm = new ReaderComm(context, mCardReaderListener);
-        mReaderComm.ReaderInitial();
-        mDaouRdrPkt = new DaouReaderPacket();
-        Log.d(TAG, "getDevCount : " + mReaderComm.getDevCount());
-    }
-    private void startTransactionLoop(final int procStep) {
-        stopTransactionLoop();
-        serialThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                while (!Thread.currentThread().isInterrupted()) {
-                    if (mDaouRdrPkt != null) {
-                        try {
-                            mReaderComm.ThreadTransactionProc(procStep);
-                        } catch (Exception ex) {
-                            Log.e(TAG, "트랜잭션 처리 중 오류: " + ex.getMessage(), ex);
-                        }
-                    }
-                    try {
-                        Thread.sleep(1000);
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-        }, "KwpSdk-Loop");
-        serialThread.setDaemon(true);
-        serialThread.start();
-    }
-    private void runSingleTransaction(final int procStep) {
-        stopTransactionLoop();
-        serialThread = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                if (mDaouRdrPkt != null) {
-                    try {
-                        mReaderComm.ThreadTransactionProc(procStep);
-                    } catch (Exception ex) {
-                        Log.e(TAG, "K900 상태 조회 중 오류: " + ex.getMessage(), ex);
-                    }
-                }
-            }
-        }, "KwpSdk-K900-OneShot");
-        serialThread.setDaemon(true);
-        serialThread.start();
-    }
+
+    /**
+     * Deliver a reader result on the main thread.
+     *
+     * @param result reader result string
+     * @return none
+     */
     private void dispatchResult(final String result) {
         if (resultCallback == null) {
             return;
         }
+
         mainHandler.post(new Runnable() {
             @Override
             public void run() {
-                if (cardInputUiHandler != null) {
-                    cardInputUiHandler.onHideCardInput();
+                if (resultCallback != null) {
+                    resultCallback.onResult(result);
                 }
-                resultCallback.onResult(result);
             }
         });
     }
-    CardReaderConstants.CardReadListener mCardReaderListener = new CardReaderConstants.CardReadListener() {
-        @Override
-        public void onCardReaderResult(String result) {
-            Log.i(TAG, "onCardReaderResult:" + result);
-            dispatchResult(result);
+
+    /**
+     * Update card input UI visibility on the main thread.
+     *
+     * @param visible true to show the card input UI
+     * @param context Android context used when showing the UI
+     * @return none
+     */
+    private void dispatchCardInputVisibility(final boolean visible, final Context context) {
+        if (visible == cardInputUiVisible) {
+            return;
         }
-    };
+        cardInputUiVisible = visible;
+
+        if (cardInputUiHandler == null) {
+            return;
+        }
+
+        mainHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                if (cardInputUiHandler == null) {
+                    return;
+                }
+                if (visible) {
+                    cardInputUiHandler.onShowCardInput(context);
+                } else {
+                    cardInputUiHandler.onHideCardInput();
+                }
+            }
+        });
+    }
+
+    /**
+     * Normalize the supplied context to an application context.
+     *
+     * @param context source Android context
+     * @return application context or the original context
+     */
+    private Context toApplicationContext(Context context) {
+        if (context == null) {
+            return null;
+        }
+        Context applicationContext = context.getApplicationContext();
+        return applicationContext != null ? applicationContext : context;
+    }
 }

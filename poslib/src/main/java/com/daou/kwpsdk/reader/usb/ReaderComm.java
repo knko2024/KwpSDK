@@ -10,7 +10,6 @@ import static com.daou.kwpsdk.reader.usb.CardReaderConstants.ThReaderIntergrity;
 import static com.daou.kwpsdk.reader.usb.CardReaderConstants.ThTranstionLaunch;
 import static com.daou.kwpsdk.reader.usb.CardReaderConstants.ThTranstionRunPayment;
 import static com.daou.kwpsdk.reader.usb.CardReaderConstants.writeLogData;
-import static com.daou.kwpsdk.reader.usb.KwpSdk.ThProcStep;
 
 import android.content.Context;
 import android.util.Log;
@@ -40,6 +39,8 @@ public class ReaderComm {
     DaouReaderPacket mDaouRdrPkt = new DaouReaderPacket();
 
     byte tempDataBuffer[] = new byte[500];
+    private volatile boolean cancelRequested = false;
+    private boolean evtTimeout = false;
 
     ReaderComm(Context mmContext, CardReaderConstants.CardReadListener mListener) {
         mContext = mmContext;
@@ -60,13 +61,13 @@ public class ReaderComm {
         D2xxManager.DriverParameters params = new D2xxManager.DriverParameters();
         params.setReadTimeout(6000);
 
-        //TODO [USB 리더기 장치 연결확인 및 리더기 연결]
+        //TODO [USB ?? ?? ???]
         devCount = ftdid2xx.createDeviceInfoList(mContext);
-        //writeLogData("[장치인식 갯수]:" + devCount);
+        //writeLogData("[?? ?]:" + devCount);
         //Log.d("KiwoomOrder", "[createDeviceInfoList]" + devCount);
 
         if (devCount <= 0) {
-           //  Toast.makeText(mContext, "리더기 연결 확인 요망(1)", Toast.LENGTH_LONG).show();
+           //  Toast.makeText(mContext, "?? ? ?(1)", Toast.LENGTH_LONG).show();
             return false;
         } else {
             try {
@@ -75,7 +76,7 @@ public class ReaderComm {
                     Log.d(TAG, "ftDevice = " + ftDevice);
 
                     if (ftDevice == null) {
-                     //   Toast.makeText(mContext, "리더기 연결 확인 요망(2)", Toast.LENGTH_LONG).show();
+                     //   Toast.makeText(mContext, "?? ? ?(2)", Toast.LENGTH_LONG).show();
                         return false;
                     }
                 } else {
@@ -86,7 +87,7 @@ public class ReaderComm {
                         Log.d(TAG, "openIndex =" + openIndex);
                         Log.d(TAG, "ftDevice  =" + ftDevice);
                         if (ftDevice == null) {
-                          //  Toast.makeText(mContext, "리더기 연결 확인 요망(3)", Toast.LENGTH_LONG).show();
+                          //  Toast.makeText(mContext, "?? ? ?(3)", Toast.LENGTH_LONG).show();
                             return false;
                         }
                     } else {
@@ -95,7 +96,7 @@ public class ReaderComm {
                 }
 
                 if (ftDevice.isOpen() == true) {
-                    // writeLogData("[리더기 OPEN]:TRUE");
+                    // writeLogData("[?OPEN]:TRUE");
                     ftDevice.setBitMode((byte) 0, D2xxManager.FT_BITMODE_RESET);
                     ftDevice.setBaudRate(115200);
                     ftDevice.setDataCharacteristics(D2xxManager.FT_DATA_BITS_8, D2xxManager.FT_STOP_BITS_1, D2xxManager.FT_PARITY_NONE);
@@ -127,7 +128,28 @@ public class ReaderComm {
     }
 
     void ReaderClose() {
-        ftDevice.close();
+        if (ftDevice == null) {
+            return;
+        }
+        try {
+            if (ftDevice.isOpen()) {
+                ftDevice.close();
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "ReaderClose failed", e);
+        }
+    }
+
+    boolean isReaderOpen() {
+        return ftDevice != null && ftDevice.isOpen();
+    }
+
+    void requestCancel() {
+        cancelRequested = true;
+    }
+
+    void clearCancelRequest() {
+        cancelRequested = false;
     }
 
     public void ReaderInitial() {
@@ -140,8 +162,7 @@ public class ReaderComm {
 
     int ThreadTransactionProc(int TransReqType) {
         int ProcStep = 0;
-        //TransReqType = ThTranstionRunPayment;
-        switch (ThProcStep) {
+        switch (TransReqType) {
             case ThPayStepIDLE:
                 Log.d(TAG, "ThPayStepIDLE");
                 break;
@@ -149,20 +170,17 @@ public class ReaderComm {
             case ThTranstionLaunch:
                 Log.d(TAG, "ThTranstionLaunch");
                 TransactionLaunch(TransReqType);
-                ThProcStep = ThPayStepIDLE;
                 break;
 
             case ThTranstionRunPayment:
                 Log.d(TAG, "ThTranstionRunPayment");
                 TransactionCredit(TransReqType);
-                ThProcStep = ThPayStepIDLE;
                 break;
 
 
             case ThReaderIntergrity:
                 Log.d(TAG, "ThReaderIntergrity");
                 TransactionReaderIntergrity(TransReqType);
-                ThProcStep = ThPayStepIDLE;
                 break;
         }
         return ProcStep;
@@ -172,7 +190,7 @@ public class ReaderComm {
         int ret = ReaderInterChangePacket(0, mDaouRdrPkt, 30000);
         TransType = PROCSTEP_DONE;
 
-        if (ret != COMCHK_OK) {
+        if (ret != COMCHK_OK && ret != COMCHK_CANCEL_EVENT) {
             Log.d(TAG, "TransactionCredit_RdrComErrorCode");
             String retval = RdrComErrorCode(mDaouRdrPkt.gethPacID());
             mCardRdrListener.onCardReaderResult(retval);
@@ -183,7 +201,7 @@ public class ReaderComm {
          int ret = ReaderInterChangePacket(0, mDaouRdrPkt, 30000);
         TransType = PROCSTEP_DONE;
 
-        if (ret != COMCHK_OK) {
+        if (ret != COMCHK_OK && ret != COMCHK_CANCEL_EVENT) {
             Log.d(TAG, "TransactionCredit_RdrComErrorCode");
             String retval = RdrComErrorCode(mDaouRdrPkt.gethPacID());
             mCardRdrListener.onCardReaderResult(retval);
@@ -193,7 +211,7 @@ public class ReaderComm {
     void TransactionReaderIntergrity(int TransType) {
        int ret = ReaderInterChangePacket(0, mDaouRdrPkt, 30000);
         TransType = PROCSTEP_DONE;
-        if (ret != COMCHK_OK) {
+        if (ret != COMCHK_OK && ret != COMCHK_CANCEL_EVENT) {
             Log.d(TAG, "TransactionCredit_RdrComErrorCode");
             String retval = RdrComErrorCode(mDaouRdrPkt.gethPacID());
 
@@ -209,8 +227,6 @@ public class ReaderComm {
         int iSep;
         boolean isRdrOpen = false;
 
-
-
         iSep = COMSTEP_MAKE_JOBCODE;
 
         while (iSep != COMSTEP_DONE) {
@@ -222,12 +238,12 @@ public class ReaderComm {
 
                 case COMSTEP_ERROR:     // Error
                     Log.d(TAG, "#######COMSTEP_ERROR#######");
-                    // 에러코드를 읽어온다.
+                    // ????.
                     if (RdrPkt.hPacID == RID_K980_CAN_TRN) {
                         Log.d(TAG, "#######K980_CANCEL#######");
                     } else {
                         Log.d(TAG, "#######COMM ERROR#######");
-                        //   Toast.makeText(mContext,"리더기 연결 확인 요망(3)",Toast.LENGTH_LONG).show();
+                        //   Toast.makeText(mContext,"?? ? ?(3)",Toast.LENGTH_LONG).show();
                         //   String retval = RdrComErrorCode(mDaouRdrPkt.gethPacID());
                         //   mCardRdrListener.onCardReaderResult(retval);
                         Arrays.fill(tempDataBuffer, (byte) 0);
@@ -238,31 +254,18 @@ public class ReaderComm {
                 case COMSTEP_CANCEL:
                     Log.d(TAG, "#######COMSTEP_CANCEL#######");
                     ReaderClose();
-                    mDaouRdrPkt.sethPacID(RID_K980_CAN_TRN);
-                    iSep = COMSTEP_MAKE_JOBCODE;
+                    iSep = COMSTEP_DONE;
                     break;
 
                 case COMSTEP_TIMEOUT:
                     Log.d(TAG, "#######COMSTEP_TIMEOUT#######");
-                    //  mDaouRdrPkt.sethPacID(RID_K980_CAN_TRN);
-
-                    ReaderClose();
-                    isRdrOpen = ReaderOpen();   // 포트 오픈
-                    if (isRdrOpen == false) {      // 포트 오픈 실패
-                        writeLogData("[리더기 연결 실패]");
-                        bStatus = COMCHK_ERR_PORT_OPEN_FAIL;
-                        iSep = COMSTEP_ERROR;
-                        break;
-                    }
-                    ReaderSendPacketK980(RdrPkt);
                     iSep = COMSTEP_ERROR;
                     break;
 
                 case COMSTEP_MAKE_JOBCODE:
                     Log.d(TAG, "#######COMSTEP_MAKE_JOBCODE#######");
-                    isRdrOpen = ReaderOpen();               // 포트 오픈
-                    if (isRdrOpen == false) {               // 포트 오픈 실패
-                        writeLogData("[리더기 연결 실패]");
+                    isRdrOpen = ReaderOpen();
+                    if (isRdrOpen == false) {
                         bStatus = COMCHK_ERR_PORT_OPEN_FAIL;
                         iSep = COMSTEP_ERROR;
                         break;
@@ -274,9 +277,6 @@ public class ReaderComm {
 
                 case COMSTEP_SEND_PACKET:
                     Log.d(TAG, "#######COMSTEP_SEND_PACKET#######");
-                    ReaderLogUtil.data("SEND",finalData, finalData.length);
-
-                    // 전문 송신
                     boolean ret = ReaderWritePacket(finalData, finalData.length);
                     if (!ret) {
                         //return COMCHK_ERR_PORT_SEND;
@@ -286,7 +286,7 @@ public class ReaderComm {
                     }
                     break;
 
-                case COMSTEP_RCV_ACK: // ACK 수신
+                case COMSTEP_RCV_ACK: // ACK ?
                     Log.d(TAG, "#######COMSTEP_RCV_ACK#######");
                     bStatus = RdrPortReceive(DaouDataUtil.VAL_ACK, 3000);
                     if (bStatus == COMCHK_OK) {
@@ -294,13 +294,13 @@ public class ReaderComm {
                         iSep = COMSTEP_RCV_PACKET;
                     } else if (bStatus == COMCHK_CANCEL_EVENT) {
                         Log.d(TAG, "#######COMCHK_CANCEL_EVENT#######");
-                        iSep = COMSTEP_CANCEL;        // 거래취소
+                        iSep = COMSTEP_CANCEL;        // 
                     } else if (bStatus == COMCHK_TIMEOUT) {
                         Log.d(TAG, "#######COMCHK_TIMEOUT#######");
-                        iSep = COMSTEP_TIMEOUT;        // 거래취소
+                        iSep = COMSTEP_TIMEOUT;        // 
                     } else {
                         Log.d(TAG, "#######COMSTEP_RCV_PACKET#######");
-                        iSep = COMSTEP_ERROR;            // 에러
+                        iSep = COMSTEP_ERROR;            // ?
                     }
                     break;
 
@@ -312,7 +312,7 @@ public class ReaderComm {
                     if (bStatus == COMCHK_OK)
                         iSep = COMSTEP_DIV_PACKET;
                     else if (bStatus == COMCHK_CANCEL_EVENT) {
-                        iSep = COMSTEP_CANCEL;                                // 거래취소
+                        iSep = COMSTEP_CANCEL;                                // 
                     } else if (bStatus == COMCHK_TIMEOUT) {
                         iSep = COMSTEP_TIMEOUT;
                     } else {
@@ -321,12 +321,12 @@ public class ReaderComm {
                             iSep = COMSTEP_SEND_PACKET;
                         }
                         else{*/
-                        iSep = COMSTEP_ERROR;                                // 에러
+                        iSep = COMSTEP_ERROR;                                // ?
                         // }
 
                     }
                     break;
-                case COMSTEP_DIV_PACKET:                                // 수신전문 파싱
+                case COMSTEP_DIV_PACKET:                                // ?? ?
                     Log.d(TAG, "#######COMSTEP_DIV_PACKET#######");
 
                      String retval = RdrRcvPktDiv(RdrPkt);
@@ -338,7 +338,7 @@ public class ReaderComm {
                     break;
             }
         }
-        ReaderClose();
+        clearCancelRequest();
         return bStatus;
     }
     String RdrComErrorCode(int value) {
@@ -413,19 +413,19 @@ public class ReaderComm {
         switch (RdrPkt.gethPacID()) {
             case RID_K100_INP_CARD:
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                        // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CARD_INPUT_REQ.getBytes());            // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                        // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CARD_INPUT_REQ.getBytes());            // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                        // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                        // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                // pos +=  DaouDataUtil.makePacket(buffer, pos, mmTerminalInfo.getTerNumber().getBytes());              // 단말기번호
-                pos += DaouDataUtil.makePacket(buffer, pos, "99999900".getBytes(StandardCharsets.UTF_8));      // 단말기번호
+                // pos +=  DaouDataUtil.makePacket(buffer, pos, mmTerminalInfo.getTerNumber().getBytes());              // ???
+                pos += DaouDataUtil.makePacket(buffer, pos, "99999900".getBytes(StandardCharsets.UTF_8));      // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                // 거래금액
+                // 
                 //pos +=  DaouDataUtil.makePacket(buffer, pos, "1004".getBytes());
                 pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getSaleAmount().getBytes());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                // 입력요청구분
+                // ??
                 pos += DaouDataUtil.makePacket(buffer, pos, "1".getBytes());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -440,12 +440,12 @@ public class ReaderComm {
             case RID_K800_CER_SECURITY:
                 // Log.d(TAG,"RID_K800_CER_SECURITY_mDaouRdrPkt.getTrmlid:" + mDaouRdrPkt.getTrmlid());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                         // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CERTIFY_SECURITY.getBytes());          // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                         // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CERTIFY_SECURITY.getBytes());          // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                        // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                        // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));                  // 단말기번호
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));                  // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -460,14 +460,14 @@ public class ReaderComm {
             case RID_K820_CER_SESSION:
                 // ReqReaderK820A(mDaouRdrPkt.getTrmlid(),RdrPkt.getServRandomeKey());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                     // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CERTIFY_SESSIONKEY.getBytes());    // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                     // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_CERTIFY_SESSIONKEY.getBytes());    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                    // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));              // 단말기번호
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));              // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getServRandomeKey().getBytes(StandardCharsets.UTF_8));                                 // 서버 Random Key
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getServRandomeKey().getBytes(StandardCharsets.UTF_8));                                 // ? Random Key
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -481,12 +481,12 @@ public class ReaderComm {
             case RID_K840_KEY_DOWN:
                 //ReqReaderK840A(mDaouRdrPkt.getTrmlid(),RdrPkt.getSecurityKey(),RdrPkt.getSecurityMac());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                     // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_SECURITYKEY_DOWN.getBytes());    // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                     // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_SECURITYKEY_DOWN.getBytes());    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                    // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));              // 단말기번호
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));              // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getSecurityKey().getBytes());
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -502,12 +502,12 @@ public class ReaderComm {
             case RID_K900_FRM_STATUS:
                 //ReqReaderK900A();
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_STATUST_INFORM.getBytes());    // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_STATUST_INFORM.getBytes());    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                //pos +=  DaouDataUtil.makePacket(buffer, pos, "99999900".getBytes());                            // 단말기번호
+                //pos +=  DaouDataUtil.makePacket(buffer, pos, "99999900".getBytes());                            // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -523,12 +523,12 @@ public class ReaderComm {
             case RID_K920_CHK_INTEGRITY:
                 //ReqReaderK920A();
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_INTERGRITY.getBytes());    // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_INTERGRITY.getBytes());    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // 단말기번호
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -542,12 +542,12 @@ public class ReaderComm {
             case RID_K980_CAN_TRN:
                 //ReqReaderK980A();
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // 전문길이
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_TRANS_CANCEL.getBytes());    // 전문번호
+                pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // ?
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_TRANS_CANCEL.getBytes());    // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // 거래일시
+                pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // ?
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // 단말기번호
+                pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // ???
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
                 pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -577,12 +577,12 @@ public class ReaderComm {
 
         //ReqReaderK980A();
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_STX);
-        pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // 전문길이
-        pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_TRANS_CANCEL.getBytes());    // 전문번호
+        pos += DaouDataUtil.makePacket(buffer, pos, "    ".getBytes());                                 // ?
+        pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.READER_TRANS_CANCEL.getBytes());    // ?
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-        pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // 거래일시
+        pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.NowTime().getBytes());                // ?
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
-        pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // 단말기번호
+        pos += DaouDataUtil.makePacket(buffer, pos, RdrPkt.getTrmlid().getBytes(StandardCharsets.UTF_8));   // ???
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
         pos += DaouDataUtil.makePacket(buffer, pos, DaouDataUtil.VAL_FS);
@@ -600,6 +600,11 @@ public class ReaderComm {
         //Arrays.fill(finalData,(byte)0x00);   // 230428 kkn
         return true;
     }
+
+    int getCancelEventCode() {
+        return COMCHK_CANCEL_EVENT;
+    }
+
     boolean ReaderWritePacket(byte[] bBytes, int iLength) {
         if (ftDevice == null) {
             writeLogData("! ftDevice = null");
@@ -648,39 +653,27 @@ public class ReaderComm {
 
 
         if (iTimeout > 0) {
-            //     startTimer();
-            //    timeTimer.start();
-
             iTimerId = UtlTime.TimerStart(iTimeout);
         }
-        EvtTimeout = false;
+        evtTimeout = false;
 
         while (true) {
             if (iTimeout != 0) {
-                /*
-                if (EvtTimeout == true) {
-                    writeLogData("[COMCHK_TIMEOUT EVENT]");
-                    bStatus = COMCHK_TIMEOUT;
-                    EvtTimeout = false;
-                    iLoopDone = 1;
-                    break;
-                }
 
-                 */
 
                 if (UtlTime.TimerCheck(iTimerId) <= 0) {
                     writeLogData("[COMCHK_TIMEOUT EVENT]");
                     bStatus = COMCHK_TIMEOUT;
-                    EvtTimeout = false;
+                    evtTimeout = false;
                     iLoopDone = 1;
                     break;
                 }
             }
 
-            if (EvtCancel == true) {
+            if (cancelRequested) {
                 writeLogData("[CANCEL EVENT]");
                 bStatus = COMCHK_CANCEL_EVENT;
-                EvtCancel = false;
+                cancelRequested = false;
                 iLoopDone = 1;
                 break;
             }
@@ -690,7 +683,11 @@ public class ReaderComm {
                 try {
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
+                    Thread.currentThread().interrupt();
+                    writeLogData("[THREAD INTERRUPTED]");
+                    bStatus = COMCHK_CANCEL_EVENT;
+                    iLoopDone = 1;
+                    break;
                 }
                 continue;
             } else {
@@ -704,7 +701,11 @@ public class ReaderComm {
                         try {
                             Thread.sleep(100);
                         } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
+                            Thread.currentThread().interrupt();
+                            writeLogData("[THREAD INTERRUPTED]");
+                            bStatus = COMCHK_CANCEL_EVENT;
+                            iLoopDone = 1;
+                            break;
                         }
                         continue;
                     }
@@ -740,7 +741,11 @@ public class ReaderComm {
                         try {
                             Thread.sleep(100);
                         } catch (InterruptedException e) {
-                            throw new RuntimeException(e);
+                            Thread.currentThread().interrupt();
+                            writeLogData("[THREAD INTERRUPTED]");
+                            bStatus = COMCHK_CANCEL_EVENT;
+                            iLoopDone = 1;
+                            break;
                         }
                         continue;
                     }
@@ -753,7 +758,7 @@ public class ReaderComm {
                 //   Log.d(TAG,"aByte:" +  aByte);
                 //   Log.d(TAG,"rcv_stx:" +rcv_stx);
                 if (rcv_stx == 0) {
-                    if (aByte == DaouDataUtil.VAL_STX) {    // ACK (0x06) 5번 입력받은후 STX 입력들어옴.
+                    if (aByte == DaouDataUtil.VAL_STX) {    // ACK (0x06) 5?????STX ????
                         //Log.d("KiwoomOrder", "ENTER_STX");
                         // writeLogData("ENTER_STX");
                         rcv_stx = 1;
@@ -779,7 +784,7 @@ public class ReaderComm {
                     Log.d("KiwoomOrder", "daouRdComm.mucRcvPacBuf.temp:" +   String.valueOf(temp[3]));
                     Log.d("KiwoomOrder", "daouRdComm.mucRcvPacBuf.String:" +   new String(temp, StandardCharsets.UTF_8));
         */
-                        rcvlen = Integer.parseInt(new String(temp, StandardCharsets.UTF_8));                                           // 응답전문 길이
+                        rcvlen = Integer.parseInt(new String(temp, StandardCharsets.UTF_8));                                           // ?? 
                         //Log.d("KiwoomOrder", "tempDataBuffer:" + new String (tempDataBuffer));
 
                     } else if ((daouRdComm.m_iRcvPacLen > 5 && rcvlen == daouRdComm.m_iRcvPacLen)) {
@@ -791,7 +796,7 @@ public class ReaderComm {
                     Log.d("KiwoomOrder", "tempDataBuffer[3]"+ tempDataBuffer[3]);
                     Log.d("KiwoomOrder", "tempDataBuffer[4]"+ tempDataBuffer[4]);
            */
-                        // 리더기에서 읽은 데이터를 CRC 생성
+                        // ???? ??? CRC ?
                         for (int i = 5; i < daouRdComm.m_iRcvPacLen - 4; i++) {
                             //Log.d("KiwoomOrder", "tempDataBuffer"+ "[" + i + "]" + daouRdComm.mucRcvPacBuf.get(i) );
                             tempDataBuffer[i] = daouRdComm.mucRcvPacBuf.get(i);
@@ -803,7 +808,7 @@ public class ReaderComm {
                         String rcvCRC = DaouDataUtil.toHexString(src_data);
                         //Log.d("KiwoomOrder", "daouRdComm.crc_str:" +   rcvCRC);
 
-                        //리더기에서 읽은 데이트의 마지막 4자리 CRC 값
+                        //???? ?? ??4? CRC ?
                     /*
                     Log.d("KiwoomOrder", "daouRdComm.mucRcvPacBuf:" +   daouRdComm.mucRcvPacBuf.get(daouRdComm.m_iRcvPacLen - 4) );
                     Log.d("KiwoomOrder", "daouRdComm.mucRcvPacBuf:" +   daouRdComm.mucRcvPacBuf.get(daouRdComm.m_iRcvPacLen - 3) );
@@ -1001,7 +1006,7 @@ public class ReaderComm {
                 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 break;
 
-            case RID_K900_FRM_STATUS:                                                                // 리더기 상태 확인
+            case RID_K900_FRM_STATUS:                                                                // ?? ?
                 Log.i("KiwoomOrder", "RID_K900_FRM_STATUS");
                 value = "";
                 try {
@@ -1271,7 +1276,7 @@ public class ReaderComm {
                 System.arraycopy(buffer, 0, copy, 0, pos);
                 // Log.d(TAG,"after_retval:" + new String(copy));
                 retval = new String(copy);
-                EvtCancel = false;  //  230428 kkn
+                clearCancelRequest();
                 break;
         }
         return retval;
@@ -1310,14 +1315,14 @@ public class ReaderComm {
 
         iLen += len;
         for (i = 0; i < Size; i++) {
-            if (DataSrc[iLen] == DaouDataUtil.VAL_FS || DataSrc[iLen] == DaouDataUtil.VAL_ETX) {    // FS check(종료로 인식.. 포인트 증가)
+            if (DataSrc[iLen] == DaouDataUtil.VAL_FS || DataSrc[iLen] == DaouDataUtil.VAL_ETX) {    // FS check(??.. ????)
                 iLen++;
                 return iLen;
             }
             DataDst[i] = DataSrc[iLen++];
         }
 
-        if (DataSrc[iLen] == DaouDataUtil.VAL_FS || DataSrc[iLen] == DaouDataUtil.VAL_ETX) {        // iSize 까지 다 채우고 나온뒤..
+        if (DataSrc[iLen] == DaouDataUtil.VAL_FS || DataSrc[iLen] == DaouDataUtil.VAL_ETX) {        // iSize ? ??????.
             iLen++;
         }
         //Log.i("KiwoomOrder","!iLen:"+ iLen);
@@ -1374,33 +1379,32 @@ public class ReaderComm {
     private final int COMCHK_ERR_PORT_OPEN_FAIL = 6;
     private final int COMCHK_ERR_DATA_RCV = 7;
     private final int COMCHK_ERR_NAK_RCV = 8;
-    public final int RID_K980_CAN_TRN = 20;        // 거래 취소
+    public final int RID_K980_CAN_TRN = 20;        //  
 
-    public final int RID_K100_INP_CARD = 1;        // 카드입력요청
-    public final int RID_K180_INP_CARD = 2;        // 카드입력요청 (카드제거 없이 거래 가능)	//
+    public final int RID_K100_INP_CARD = 1;        // ??
+    public final int RID_K180_INP_CARD = 2;        // ?? (? ?  ??	//
 
-    public final int RID_K300_ENC_DATA = 9;        // 데이터 암호화		//
-    public final int RID_K400_CHK_ICCARD_TYPE = 10;        // 신용/현금 IC Check	//
+    public final int RID_K300_ENC_DATA = 9;        // ??????	//
+    public final int RID_K400_CHK_ICCARD_TYPE = 10;        // ?/? IC Check	//
 
-    public final int RID_K700_TRS_PARAMETER = 13;        // 파라미터 전송
-    public final int RID_K800_CER_SECURITY = 14;        // 보안인증
-    public final int RID_K820_CER_SESSION = 15;        // 세션키 생성
-    public final int RID_K840_KEY_DOWN = 16;        // 보안키 다운로드
-    public final int RID_K900_FRM_STATUS = 17;        // 리더기 상태 확인
-    public final int RID_K920_CHK_INTEGRITY = 18;        // 무결성 검사
-
-
-    public static boolean EvtCancel = false;
-    public static boolean EvtTimeout = false;
+    public final int RID_K700_TRS_PARAMETER = 13;        // ? ?
+    public final int RID_K800_CER_SECURITY = 14;        // ?
+    public final int RID_K820_CER_SESSION = 15;        // ????
+    public final int RID_K840_KEY_DOWN = 16;        // ???
+    public final int RID_K900_FRM_STATUS = 17;        // ?? ?
+    public final int RID_K920_CHK_INTEGRITY = 18;        // ????
 
 
-    public static final byte CARD_INPUT_TYPE_NOMAL = 0x01;    // 기본 입력 요청, 리더기에서 입력되는 대로 리턴, KEYIN 버튼생성
-    public static final byte CARD_INPUT_TYPE_EVENT = 0x02;    // 이벤트 발생으로 입력된 카드를 읽기 위한 입력 요청		(사용안함)
-    public static final byte CARD_INPUT_TYPE_IC = 0x03;    // MS카드 리딩으로 발생된 이벤트에 대해 IC카드 입력이 필요한 경우	(사용안함)
-    public static final byte CARD_INPUT_TYPE_FALLBACK = 0x04;    // fall - back 거래 입력 요청
-    public static final byte CARD_INPUT_TYPE_MS = 0x05;    // MS 입력 요청
-    public static final byte CARD_INPUT_TYPE_ENC_KIN = 0x06;    // 암호화 된 KEYIN 입력 요청	//(멀티패드용)
+
+
+    public static final byte CARD_INPUT_TYPE_NOMAL = 0x01;    //  ? ?, ???? ??, KEYIN ?
+    public static final byte CARD_INPUT_TYPE_EVENT = 0x02;    // ???? ????? ? ? ?		(??)
+    public static final byte CARD_INPUT_TYPE_IC = 0x03;    // MS ? ???? ???IC ??????	(??)
+    public static final byte CARD_INPUT_TYPE_FALLBACK = 0x04;    // fall - back  ? ?
+    public static final byte CARD_INPUT_TYPE_MS = 0x05;    // MS ? ?
+    public static final byte CARD_INPUT_TYPE_ENC_KIN = 0x06;    // ?????KEYIN ? ?	//(??)
 
 
 
 }
+
