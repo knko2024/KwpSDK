@@ -112,6 +112,8 @@ public class KwpSdk {
         this.openingTransactionListener = listener;
     }
 
+
+
     /**
      * Initialize the DAOU opening transaction client.
      *
