@@ -1119,7 +1119,6 @@ public class ReaderComm {
                 mDaouRdrPkt.rRFU = SplitText[5].getBytes(StandardCharsets.UTF_8);
                 mDaouRdrPkt.rDeviceInfo = SplitText[6].getBytes(StandardCharsets.UTF_8);
 
-
                 Arrays.fill(buffer, (byte) 0);
                 //pos +=  DaouDataUtil.makePacket(buffer, pos, "K810".getBytes());
                 pos += DaouDataUtil.makePacket(buffer, pos, mDaouRdrPkt.rTeleNo);

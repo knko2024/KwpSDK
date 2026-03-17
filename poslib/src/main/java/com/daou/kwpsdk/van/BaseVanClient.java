@@ -11,7 +11,7 @@ import com.daou.kwpsdk.common.model.PaymentRequest;
  */
 public abstract class BaseVanClient implements VanClient {
 
-    private static final String TAG = "BaseVanClient";
+    private static final String TAG = "KWPSDK";
 
     protected VanConfig config;
     protected boolean initialized = false;

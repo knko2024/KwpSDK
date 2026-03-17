@@ -1,28 +1,27 @@
 package com.daou.kwpsdk.van;
 
 /**
- * VAN 설정 정보
- * VAN 서버 접속에 필요한 설정값을 담는 클래스
+ * VAN configuration values.
  */
 public class VanConfig {
 
-    /** VAN사 타입 */
+    private static final String DEFAULT_DOWNLOAD_SERVER_IP = "222.106.99.137";
+    private static final int DEFAULT_DOWNLOAD_SERVER_PORT = 20071;
+    private static final String DEFAULT_MODEL_CODE = "PK1B";
+    private static final String DEFAULT_SOFTWARE_CERT = "###DAOU-MPOS1000";
+    private static final String DEFAULT_COMPANY_NUMBER = "1242137263";
+
     private VanClient.VanType vanType;
-
-    /** VAN 서버 IP (주소) */
     private String serverIp;
-
-    /** VAN 서버 포트 */
     private int serverPort;
-
-    /** 가맹점 번호 (TID) */
     private String terminalId;
-
-    /** 통신 타임아웃 (밀리초) */
     private int timeout = 30000;
-
-    /** SSL 사용 여부 */
     private boolean useSsl = false;
+    private String downloadServerIp = DEFAULT_DOWNLOAD_SERVER_IP;
+    private int downloadServerPort = DEFAULT_DOWNLOAD_SERVER_PORT;
+    private String modelCode = DEFAULT_MODEL_CODE;
+    private String softwareCert = DEFAULT_SOFTWARE_CERT;
+    private String companyNumber = DEFAULT_COMPANY_NUMBER;
 
     public VanConfig() {
     }
@@ -33,9 +32,9 @@ public class VanConfig {
         this.serverIp = serverIp;
         this.serverPort = serverPort;
         this.terminalId = terminalId;
+        this.downloadServerIp = serverIp;
+        this.downloadServerPort = serverPort;
     }
-
-    // Getters and Setters
 
     public VanClient.VanType getVanType() {
         return vanType;
@@ -85,15 +84,58 @@ public class VanConfig {
         this.useSsl = useSsl;
     }
 
+    public String getDownloadServerIp() {
+        return downloadServerIp;
+    }
+
+    public void setDownloadServerIp(String downloadServerIp) {
+        this.downloadServerIp = downloadServerIp;
+    }
+
+    public int getDownloadServerPort() {
+        return downloadServerPort;
+    }
+
+    public void setDownloadServerPort(int downloadServerPort) {
+        this.downloadServerPort = downloadServerPort;
+    }
+
+    public String getModelCode() {
+        return modelCode;
+    }
+
+    public void setModelCode(String modelCode) {
+        this.modelCode = modelCode;
+    }
+
+    public String getSoftwareCert() {
+        return softwareCert;
+    }
+
+    public void setSoftwareCert(String softwareCert) {
+        this.softwareCert = softwareCert;
+    }
+
+    public String getCompanyNumber() {
+        return companyNumber;
+    }
+
+    public void setCompanyNumber(String companyNumber) {
+        this.companyNumber = companyNumber;
+    }
+
     @Override
     public String toString() {
-        return "VanConfig{" +
-                "vanType=" + vanType +
-                ", serverIp='" + serverIp + '\'' +
-                ", serverPort=" + serverPort +
-                ", terminalId='" + terminalId + '\'' +
-                ", timeout=" + timeout +
-                '}';
+        return "VanConfig{"
+            + "vanType=" + vanType
+            + ", serverIp='" + serverIp + '\''
+            + ", serverPort=" + serverPort
+            + ", terminalId='" + terminalId + '\''
+            + ", downloadServerIp='" + downloadServerIp + '\''
+            + ", downloadServerPort=" + downloadServerPort
+            + ", modelCode='" + modelCode + '\''
+            + ", companyNumber='" + companyNumber + '\''
+            + ", timeout=" + timeout
+            + '}';
     }
 }
-
